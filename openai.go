@@ -97,13 +97,13 @@ func WithOpenAIMaxResponseSize(n int64) OpenAIOption {
 func NewOpenAIProvider(apiKey string, opts ...OpenAIOption) *OpenAIProvider {
 	p := &OpenAIProvider{
 		apiKey:      apiKey,
-		model:       "gpt-image-1",
+		model:       "gpt-image-2",
 		size:        "1024x1024",
 		quality:     "standard",
 		style:       "",
 		client:      &http.Client{Timeout: 90 * time.Second},
-		respFmt:     "b64_json",
-		maxRespSize: 2 << 20,
+		respFmt:     "",
+		maxRespSize: 50 << 20,
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -164,6 +164,9 @@ func (p *OpenAIProvider) Generate(ctx context.Context, req *Request) (*Result, e
 
 	var result openAIResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
+		if int64(len(respBody)) >= p.maxRespSize {
+			return nil, fmt.Errorf("openai: response truncated at %d bytes, increase max response size", p.maxRespSize)
+		}
 		return nil, fmt.Errorf("openai: parse response: %w", err)
 	}
 

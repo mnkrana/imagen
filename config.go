@@ -4,6 +4,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 // Config holds all configuration for imagen providers and storage.
@@ -27,7 +29,7 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		Model:           "gpt-image-1",
+		Model:           "gpt-image-2",
 		Size:            "1024x1024",
 		Quality:         "standard",
 		Provider:        ProviderOpenAI,
@@ -104,9 +106,14 @@ func WithSizeLimits(maxResponseSize, maxImageSize int64) Option {
 }
 
 // LoadConfigFromEnv reads configuration from environment variables.
+// It automatically loads .env file from the current directory if present.
 // It does not fail on missing optional values; callers should validate
 // required fields separately.
 func LoadConfigFromEnv() Config {
+	if _, err := os.Stat(".env"); err == nil {
+		godotenv.Load()
+	}
+
 	cfg := DefaultConfig()
 
 	if v := os.Getenv("OPENAI_API_KEY"); v != "" {
