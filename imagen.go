@@ -6,6 +6,7 @@ package imagen
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 )
 
@@ -121,7 +122,16 @@ func NewClientFromConfig(cfg Config) (*Client, error) {
 		if cfg.StabilityAPIKey == "" {
 			return nil, ErrAPIKeyRequired
 		}
-		return nil, fmt.Errorf("stability provider not yet implemented")
+		provider = NewStabilityProvider(cfg.StabilityAPIKey,
+			WithStabilityEndpoint(cfg.StabilityEndpoint),
+			WithStabilityModel(cfg.StabilityModel),
+			WithStabilityCfgScale(cfg.StabilityCfgScale),
+			WithStabilitySteps(cfg.StabilitySteps),
+			WithStabilityStylePreset(cfg.StabilityStylePreset),
+			WithStabilityOutputFormat(cfg.OutputFormat),
+			WithStabilityHTTPClient(&http.Client{Timeout: cfg.HTTPTimeout}),
+			WithStabilityMaxResponseSize(cfg.MaxResponseSize),
+		)
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", cfg.Provider)
 	}

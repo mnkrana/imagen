@@ -78,8 +78,14 @@ imagen auto-loads a `.env` file from the current directory if present. Set these
 | `IMAGEN_MODEL` | no | `gpt-image-2` | Model name |
 | `IMAGEN_SIZE` | no | `1024x1024` | Output size |
 | `IMAGEN_QUALITY` | no | `standard` | Quality: `standard` or `hd` |
+| `IMAGEN_OUTPUT_FORMAT` | no | `webp` | Output format (Stability: `png`, `webp`, `jpeg`) |
 | `IMAGEN_HTTP_TIMEOUT` | no | `90s` | HTTP client timeout |
 | `GCS_OBJECT_PREFIX` | no | `images/` | GCS object path prefix |
+| `STABILITY_ENDPOINT` | no | `https://api.stability.ai/v1` | Stability API base URL |
+| `STABILITY_MODEL` | no | `stable-diffusion-xl-1024-v1-0` | Stability model ID |
+| `STABILITY_CFG_SCALE` | no | `7.0` | Classifier-free guidance scale |
+| `STABILITY_STEPS` | no | `30` | Number of inference steps |
+| `STABILITY_STYLE_PRESET` | no | — | Style preset (`photographic`, `digital-art`, `anime`, etc.) |
 
 ### Programmatic configuration
 
@@ -154,7 +160,21 @@ Handles `b64_json` and `url` response formats automatically, detects content typ
 
 ### Stability AI
 
-> Coming soon. The `StabilityProvider` will wrap the Stability AI REST API with the same `Provider` interface, letting you switch providers without changing your application code.
+```go
+provider := imagen.NewStabilityProvider("...")
+```
+
+Supports SDXL, SD3.5, and any Stability AI text-to-image model. Configurable via options:
+
+- `WithStabilityEndpoint` — API base URL
+- `WithStabilityModel` — model ID (e.g. `stable-diffusion-xl-1024-v1-0`)
+- `WithStabilityCfgScale` — classifier-free guidance scale
+- `WithStabilitySteps` — inference steps
+- `WithStabilityStylePreset` — style preset (`photographic`, `digital-art`, `anime`, etc.)
+- `WithStabilityOutputFormat` — output format (`png`, `webp`, `jpeg`)
+- `WithStabilityHTTPClient` — custom HTTP client
+
+Size is parsed from `Request.Size` (e.g. `"1024x1024"`). Returns the seed from the first artifact and detects content type from magic bytes.
 
 ---
 
@@ -255,6 +275,7 @@ go run .
 imagen/
 ├── imagen.go       — Core types, interfaces, Client orchestrator
 ├── openai.go       — OpenAI provider implementation
+├── stability.go    — Stability AI provider implementation
 ├── gcs.go          — GCS storage implementation
 ├── config.go       — Config, options, env loading
 ├── errors.go       — Sentinel errors

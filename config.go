@@ -10,35 +10,47 @@ import (
 
 // Config holds all configuration for imagen providers and storage.
 type Config struct {
-	OpenAIAPIKey    string
-	StabilityAPIKey string
-	GCSBucket       string
-	GCSObjectPrefix string
-	Model           string
-	Size            string
-	Quality         string
-	Provider        ProviderID
-	MaxRetries      int
-	BaseDelay       time.Duration
-	MaxDelay        time.Duration
-	HTTPTimeout     time.Duration
-	MaxResponseSize int64
-	MaxImageSize    int64
+	OpenAIAPIKey         string
+	StabilityAPIKey      string
+	GCSBucket            string
+	GCSObjectPrefix      string
+	Model                string
+	Size                 string
+	Quality              string
+	Provider             ProviderID
+	MaxRetries           int
+	BaseDelay            time.Duration
+	MaxDelay             time.Duration
+	HTTPTimeout          time.Duration
+	MaxResponseSize      int64
+	MaxImageSize         int64
+	StabilityEndpoint    string
+	StabilityModel       string
+	StabilityCfgScale    float64
+	StabilitySteps       int
+	StabilityStylePreset string
+	OutputFormat         string
 }
 
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		Model:           "gpt-image-2",
-		Size:            "1024x1024",
-		Quality:         "standard",
-		Provider:        ProviderOpenAI,
-		MaxRetries:      5,
-		BaseDelay:       time.Second,
-		MaxDelay:        30 * time.Second,
-		HTTPTimeout:     90 * time.Second,
-		MaxResponseSize: 2 << 20,
-		MaxImageSize:    25 << 20,
+		Model:              "gpt-image-2",
+		Size:               "1024x1024",
+		Quality:            "standard",
+		Provider:           ProviderOpenAI,
+		MaxRetries:         5,
+		BaseDelay:          time.Second,
+		MaxDelay:           30 * time.Second,
+		HTTPTimeout:        90 * time.Second,
+		MaxResponseSize:    2 << 20,
+		MaxImageSize:       25 << 20,
+		StabilityEndpoint:  "https://api.stability.ai/v1",
+		StabilityModel:     "stable-diffusion-xl-1024-v1-0",
+		StabilityCfgScale:  7.0,
+		StabilitySteps:     30,
+		StabilityStylePreset: "",
+		OutputFormat:       "webp",
 	}
 }
 
@@ -105,6 +117,11 @@ func WithSizeLimits(maxResponseSize, maxImageSize int64) Option {
 	}
 }
 
+// WithOutputFormat sets the output image format for providers that support it.
+func WithOutputFormat(f string) Option {
+	return func(c *Config) { c.OutputFormat = f }
+}
+
 // LoadConfigFromEnv reads configuration from environment variables.
 // It automatically loads .env file from the current directory if present.
 // It does not fail on missing optional values; callers should validate
@@ -149,6 +166,28 @@ func LoadConfigFromEnv() Config {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.HTTPTimeout = d
 		}
+	}
+	if v := os.Getenv("STABILITY_ENDPOINT"); v != "" {
+		cfg.StabilityEndpoint = v
+	}
+	if v := os.Getenv("STABILITY_MODEL"); v != "" {
+		cfg.StabilityModel = v
+	}
+	if v := os.Getenv("STABILITY_CFG_SCALE"); v != "" {
+		if n, err := strconv.ParseFloat(v, 64); err == nil && n > 0 {
+			cfg.StabilityCfgScale = n
+		}
+	}
+	if v := os.Getenv("STABILITY_STEPS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.StabilitySteps = n
+		}
+	}
+	if v := os.Getenv("STABILITY_STYLE_PRESET"); v != "" {
+		cfg.StabilityStylePreset = v
+	}
+	if v := os.Getenv("IMAGEN_OUTPUT_FORMAT"); v != "" {
+		cfg.OutputFormat = v
 	}
 
 	return cfg
