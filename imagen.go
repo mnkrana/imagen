@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // ProviderID identifies an image generation provider.
@@ -62,21 +64,46 @@ type Storage interface {
 
 // Client orchestrates image generation and storage.
 type Client struct {
-	provider Provider
-	storage  Storage
+	provider    Provider
+	storage     Storage
+	rateLimiter *rate.Limiter
+}
+
+// ClientOption configures a Client.
+type ClientOption func(*Client)
+
+// WithRateLimit sets a rate limiter on image generation calls.
+// Burst requests are allowed immediately, then subsequent requests are
+// throttled to the given rate. Use this to comply with provider API rate limits
+// (e.g. OpenAI gpt-image-2: 5 images/minute).
+func WithRateLimit(r rate.Limit, burst int) ClientOption {
+	return func(c *Client) {
+		c.rateLimiter = rate.NewLimiter(r, burst)
+	}
 }
 
 // NewClient creates a new Client with the given provider and storage backend.
-func NewClient(provider Provider, storage Storage) *Client {
-	return &Client{
+func NewClient(provider Provider, storage Storage, opts ...ClientOption) *Client {
+	c := &Client{
 		provider: provider,
 		storage:  storage,
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // GenerateAndStore generates an image and uploads it to storage.
 // It returns the storage result containing the public URL.
+// If a rate limiter is configured, the call blocks until a token is available.
 func (c *Client) GenerateAndStore(ctx context.Context, req *Request) (*StorageResult, error) {
+	if c.rateLimiter != nil {
+		if err := c.rateLimiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("rate limit: %w", err)
+		}
+	}
+
 	result, err := c.provider.Generate(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("generate: %w", err)
