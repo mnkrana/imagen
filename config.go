@@ -12,6 +12,7 @@ import (
 type Config struct {
 	OpenAIAPIKey         string
 	StabilityAPIKey      string
+	GrokAPIKey           string
 	GCSBucket            string
 	GCSObjectPrefix      string
 	Model                string
@@ -30,6 +31,8 @@ type Config struct {
 	StabilitySteps       int
 	StabilityStylePreset string
 	OutputFormat         string
+	GrokModel            string
+	GrokEndpoint         string
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -50,7 +53,9 @@ func DefaultConfig() Config {
 		StabilityCfgScale:  7.0,
 		StabilitySteps:     30,
 		StabilityStylePreset: "",
-		OutputFormat:       "webp",
+		OutputFormat:         "webp",
+		GrokModel:            "grok-imagine-image",
+		GrokEndpoint:         "https://api.x.ai/v1",
 	}
 }
 
@@ -65,6 +70,11 @@ func WithOpenAIAPIKey(key string) Option {
 // WithStabilityAPIKey sets the Stability AI API key.
 func WithStabilityAPIKey(key string) Option {
 	return func(c *Config) { c.StabilityAPIKey = key }
+}
+
+// WithGrokAPIKey sets the xAI Grok API key.
+func WithGrokAPIKey(key string) Option {
+	return func(c *Config) { c.GrokAPIKey = key }
 }
 
 // WithModel sets the image generation model.
@@ -139,6 +149,9 @@ func LoadConfigFromEnv() Config {
 	if v := os.Getenv("STABILITY_API_KEY"); v != "" {
 		cfg.StabilityAPIKey = v
 	}
+	if v := os.Getenv("GROK_API_KEY"); v != "" {
+		cfg.GrokAPIKey = v
+	}
 	if v := os.Getenv("GCS_BUCKET"); v != "" {
 		cfg.GCSBucket = v
 	}
@@ -188,6 +201,12 @@ func LoadConfigFromEnv() Config {
 	}
 	if v := os.Getenv("IMAGEN_OUTPUT_FORMAT"); v != "" {
 		cfg.OutputFormat = v
+	}
+	if v := os.Getenv("GROK_MODEL"); v != "" {
+		cfg.GrokModel = v
+	}
+	if v := os.Getenv("GROK_ENDPOINT"); v != "" {
+		cfg.GrokEndpoint = v
 	}
 
 	return cfg

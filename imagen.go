@@ -18,6 +18,7 @@ type ProviderID string
 const (
 	ProviderOpenAI    ProviderID = "openai"
 	ProviderStability ProviderID = "stability"
+	ProviderGrok      ProviderID = "grok"
 )
 
 // Request defines parameters for generating an image.
@@ -158,6 +159,16 @@ func NewClientFromConfig(cfg Config) (*Client, error) {
 			WithStabilityOutputFormat(cfg.OutputFormat),
 			WithStabilityHTTPClient(&http.Client{Timeout: cfg.HTTPTimeout}),
 			WithStabilityMaxResponseSize(cfg.MaxResponseSize),
+		)
+	case ProviderGrok:
+		if cfg.GrokAPIKey == "" {
+			return nil, ErrAPIKeyRequired
+		}
+		provider = NewGrokProvider(cfg.GrokAPIKey,
+			WithGrokModel(cfg.GrokModel),
+			WithGrokBaseURL(cfg.GrokEndpoint),
+			WithGrokHTTPClient(&http.Client{Timeout: cfg.HTTPTimeout}),
+			WithGrokMaxResponseSize(cfg.MaxResponseSize),
 		)
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", cfg.Provider)
