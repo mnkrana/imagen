@@ -44,12 +44,12 @@ type grokError struct {
 
 // GrokProvider generates images using the xAI Grok API.
 type GrokProvider struct {
-	apiKey      string
-	baseURL     string
-	model       string
+	apiKey       string
+	baseURL      string
+	model        string
 	qualityModel string
-	client      *http.Client
-	maxRespSize int64
+	client       *http.Client
+	maxRespSize  int64
 }
 
 // GrokOption configures the Grok provider.

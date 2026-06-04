@@ -216,7 +216,7 @@ func (p *StabilityProvider) doRequest(ctx context.Context, url string, payload [
 
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
-		req.Header.Set("Authorization", "Bearer " + p.apiKey)
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
 		resp, err = p.client.Do(req)
 		if err != nil {

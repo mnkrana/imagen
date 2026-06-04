@@ -1,6 +1,6 @@
 # imagen
 
-> **Unified Go library for multi-provider AI image generation with automatic cloud storage upload.**
+> **Unified Go library for multi-provider AI image generation (OpenAI, Stability AI, xAI Grok) with automatic cloud storage upload.**
 
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://golang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -74,7 +74,7 @@ imagen auto-loads a `.env` file from the current directory if present. Set these
 | `OPENAI_API_KEY` | for OpenAI | — | OpenAI API key |
 | `STABILITY_API_KEY` | for Stability | — | Stability AI API key |
 | `GCS_BUCKET` | yes | — | Google Cloud Storage bucket name |
-| `IMAGEN_PROVIDER` | no | `openai` | Provider: `openai` or `stability` |
+| `IMAGEN_PROVIDER` | no | `openai` | Provider: `openai`, `stability`, or `grok` |
 | `IMAGEN_MODEL` | no | `gpt-image-2` | Model name |
 | `IMAGEN_SIZE` | no | `1024x1024` | Output size |
 | `IMAGEN_QUALITY` | no | `standard` | Quality: `standard` or `hd` |
@@ -86,6 +86,9 @@ imagen auto-loads a `.env` file from the current directory if present. Set these
 | `STABILITY_CFG_SCALE` | no | `7.0` | Classifier-free guidance scale |
 | `STABILITY_STEPS` | no | `30` | Number of inference steps |
 | `STABILITY_STYLE_PRESET` | no | — | Style preset (`photographic`, `digital-art`, `anime`, etc.) |
+| `GROK_API_KEY` | for Grok | — | xAI Grok API key |
+| `GROK_MODEL` | no | `grok-imagine-image` | Grok model name |
+| `GROK_ENDPOINT` | no | `https://api.x.ai/v1` | Grok API base URL |
 
 ### Programmatic configuration
 
@@ -105,6 +108,18 @@ storage := imagen.NewGCSStorage("my-bucket",
 client := imagen.NewClient(provider, storage)
 ```
 
+Or with Grok:
+
+```go
+provider := imagen.NewGrokProvider("xai-...",
+    imagen.WithGrokQualityModel("grok-imagine-image-quality"),
+)
+
+client := imagen.NewClient(provider, storage,
+    imagen.WithRateLimit(rate.Every(12*time.Second), 5),
+)
+```
+
 ---
 
 ## Architecture
@@ -113,7 +128,7 @@ client := imagen.NewClient(provider, storage)
 ┌──────────┐    ┌──────────────────┐    ┌─────────────┐    ┌──────────┐
 │  Request  │───▶│  Client          │───▶│  Provider   │───▶│  Result  │
 │  (prompt) │    │  GenerateAndStore│    │  (OpenAI /  │    │  (bytes) │
-└──────────┘    │                  │    │   Stability)│    └──────────┘
+└──────────┘    │                  │    │   Stability/│    └──────────┘
                 │                  │    └─────────────┘         │
                 │                  │                            ▼
                 │                  │    ┌─────────────┐    ┌──────────┐
@@ -175,6 +190,21 @@ Supports SDXL, SD3.5, and any Stability AI text-to-image model. Configurable via
 - `WithStabilityHTTPClient` — custom HTTP client
 
 Size is parsed from `Request.Size` (e.g. `"1024x1024"`). Returns the seed from the first artifact and detects content type from magic bytes.
+
+### xAI Grok
+
+```go
+provider := imagen.NewGrokProvider("xai-...")
+```
+
+Supports `grok-imagine-image` and `grok-imagine-image-quality` models. Selects the quality model automatically when `Request.Quality` is `"high"` or `"hd"`. Configurable via options:
+
+- `WithGrokModel` — default model name (default: `grok-imagine-image`)
+- `WithGrokQualityModel` — high-quality model variant (default: `grok-imagine-image-quality`)
+- `WithGrokBaseURL` — API base URL
+- `WithGrokHTTPClient` — custom HTTP client
+
+Handles both `b64_json` and `url` response formats, respects `mime_type` from the API response, and detects content type from magic bytes as fallback.
 
 ---
 
@@ -276,6 +306,7 @@ imagen/
 ├── imagen.go       — Core types, interfaces, Client orchestrator
 ├── openai.go       — OpenAI provider implementation
 ├── stability.go    — Stability AI provider implementation
+├── grok.go         — xAI Grok provider implementation
 ├── gcs.go          — GCS storage implementation
 ├── config.go       — Config, options, env loading
 ├── errors.go       — Sentinel errors
