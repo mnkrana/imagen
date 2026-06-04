@@ -23,12 +23,13 @@ const (
 
 // Request defines parameters for generating an image.
 type Request struct {
-	Prompt  string
-	Model   string
-	Size    string
-	Quality string
-	N       int
-	Style   string
+	Prompt       string
+	SafeFallback string // fallback if prompt triggers provider content filter
+	Model        string
+	Size         string
+	Quality      string
+	N            int
+	Style        string
 
 	Extras map[string]any
 }
