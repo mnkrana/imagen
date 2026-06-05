@@ -173,6 +173,20 @@ Supports `gpt-image-2`, `dall-e-3`, and `dall-e-2`. Configurable via options:
 
 Handles `b64_json` and `url` response formats automatically, detects content type via magic bytes, and maps API errors to typed sentinels.
 
+**Content-filter sanitization:** When a prompt triggers a content policy violation, the provider automatically retries with progressively safer prompts:
+
+1. **Tier 1** — Prepends `"Fictional storybook illustration from a literary narrative. "` to the original prompt.
+2. **Tier 2** — If Tier 1 is also blocked and `Request.SafeFallback` is set, the fallback prompt is used instead.
+
+```go
+result, err := client.GenerateAndStore(ctx, &imagen.Request{
+    Prompt:       "war scene with explosions",
+    SafeFallback: "a peaceful landscape at sunset",
+})
+```
+
+This prevents hard failures from over-aggressive moderation while giving the caller full control over the fallback content.
+
 ### Stability AI
 
 ```go
