@@ -205,7 +205,7 @@ func (p *OpenAIProvider) callAPI(ctx context.Context, prompt string, apiReq open
 		var apiErr openAIErrorResponse
 		if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Error.Message != "" {
 			switch apiErr.Error.Code {
-			case "content_policy_violation":
+			case "content_policy_violation", "moderation_blocked":
 				return nil, fmt.Errorf("openai: %w: %s", ErrContentFiltered, apiErr.Error.Message)
 			case "rate_limit_exceeded":
 				return nil, fmt.Errorf("openai: %w: %s", ErrRateLimited, apiErr.Error.Message)
