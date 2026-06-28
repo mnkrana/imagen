@@ -79,6 +79,7 @@ imagen auto-loads a `.env` file from the current directory if present. Set these
 | `IMAGEN_SIZE` | no | `1024x1024` | Output size |
 | `IMAGEN_QUALITY` | no | `standard` | Quality: `standard` or `hd` |
 | `IMAGEN_OUTPUT_FORMAT` | no | `webp` | Output format (Stability: `png`, `webp`, `jpeg`) |
+| `IMAGEN_MAX_RETRIES` | no | `5` | Max retry attempts for API calls |
 | `IMAGEN_HTTP_TIMEOUT` | no | `90s` | HTTP client timeout |
 | `GCS_OBJECT_PREFIX` | no | `images/` | GCS object path prefix |
 | `STABILITY_ENDPOINT` | no | `https://api.stability.ai/v1` | Stability API base URL |
@@ -171,9 +172,9 @@ Supports `gpt-image-2`, `dall-e-3`, and `dall-e-2`. Configurable via options:
 - `WithOpenAIResponseFormat` — `url` or `b64_json`
 - `WithOpenAIHTTPClient` — custom HTTP client
 
-Handles `b64_json` and `url` response formats automatically, detects content type via magic bytes, and maps API errors to typed sentinels.
+Handles `b64_json` and `url` response formats automatically, detects content type via magic bytes, and maps API errors to typed sentinels (`content_policy_violation`, `moderation_blocked`, `rate_limit_exceeded`, etc.).
 
-**Content-filter sanitization:** When a prompt triggers a content policy violation, the provider automatically retries with progressively safer prompts:
+**Content-filter sanitization:** When a prompt triggers a content policy violation (`content_policy_violation` or `moderation_blocked`), the provider automatically retries with progressively safer prompts:
 
 1. **Tier 1** — Prepends `"Fictional storybook illustration from a literary narrative. "` to the original prompt.
 2. **Tier 2** — If Tier 1 is also blocked and `Request.SafeFallback` is set, the fallback prompt is used instead.
