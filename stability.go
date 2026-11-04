@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -125,6 +126,11 @@ func (p *StabilityProvider) Generate(ctx context.Context, req *Request) (*Result
 	}
 	if req.Prompt == "" {
 		return nil, fmt.Errorf("stability: %w", ErrEmptyPrompt)
+	}
+	if len(req.ReferenceImages) > 0 {
+		// The Stability text-to-image endpoint cannot take input images; the
+		// references are ignored and generation proceeds text-only.
+		log.Printf("stability: %d reference image(s) ignored: text-to-image endpoint does not support image conditioning", len(req.ReferenceImages))
 	}
 
 	size := coalesce(req.Size, "1024x1024")

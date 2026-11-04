@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -103,6 +104,11 @@ func (p *GrokProvider) Generate(ctx context.Context, req *Request) (*Result, err
 	}
 	if req.Prompt == "" {
 		return nil, fmt.Errorf("grok: %w", ErrEmptyPrompt)
+	}
+	if len(req.ReferenceImages) > 0 {
+		// The Grok images endpoint cannot take input images; the references are
+		// ignored and generation proceeds text-only.
+		log.Printf("grok: %d reference image(s) ignored: images endpoint does not support image conditioning", len(req.ReferenceImages))
 	}
 
 	model := p.model

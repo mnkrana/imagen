@@ -9,12 +9,15 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
+	"strconv"
 	"strings"
 	"time"
 )
 
-const openAIBaseURL = "https://api.openai.com/v1/images/generations"
+const openAIDefaultBaseURL = "https://api.openai.com/v1"
 
 type openAIRequest struct {
 	Model          string `json:"model"`
@@ -48,6 +51,7 @@ type openAIError struct {
 // OpenAIProvider generates images using the OpenAI API.
 type OpenAIProvider struct {
 	apiKey      string
+	baseURL     string
 	model       string
 	size        string
 	quality     string
@@ -63,6 +67,12 @@ type OpenAIOption func(*OpenAIProvider)
 // WithOpenAIModel sets the model for the OpenAI provider.
 func WithOpenAIModel(model string) OpenAIOption {
 	return func(p *OpenAIProvider) { p.model = model }
+}
+
+// WithOpenAIBaseURL overrides the API base URL. Defaults to
+// https://api.openai.com/v1. Useful for tests and proxies.
+func WithOpenAIBaseURL(url string) OpenAIOption {
+	return func(p *OpenAIProvider) { p.baseURL = url }
 }
 
 // WithOpenAISize sets the image size.
@@ -99,6 +109,7 @@ func WithOpenAIMaxResponseSize(n int64) OpenAIOption {
 func NewOpenAIProvider(apiKey string, opts ...OpenAIOption) *OpenAIProvider {
 	p := &OpenAIProvider{
 		apiKey:      apiKey,
+		baseURL:     openAIDefaultBaseURL,
 		model:       "gpt-image-2",
 		size:        "1024x1024",
 		quality:     "standard",
@@ -114,7 +125,9 @@ func NewOpenAIProvider(apiKey string, opts ...OpenAIOption) *OpenAIProvider {
 }
 
 // Generate calls the OpenAI Images API and returns the generated image.
-// If the prompt triggers a content policy violation, it retries with
+// When the request carries reference images, the edits endpoint is used so the
+// output is conditioned on them; otherwise the plain generations endpoint is
+// used. If the prompt triggers a content policy violation, it retries with
 // progressively sanitized prompts (Tier 1: safety prefix, Tier 2: SafeFallback).
 func (p *OpenAIProvider) Generate(ctx context.Context, req *Request) (*Result, error) {
 	if p.apiKey == "" {
@@ -123,19 +136,16 @@ func (p *OpenAIProvider) Generate(ctx context.Context, req *Request) (*Result, e
 	if req.Prompt == "" {
 		return nil, fmt.Errorf("openai: %w", ErrEmptyPrompt)
 	}
-
-	apiReq := openAIRequest{
-		Model:          coalesce(req.Model, p.model),
-		Prompt:         req.Prompt,
-		N:              capN(req.N),
-		Size:           coalesce(req.Size, p.size),
-		Quality:        coalesce(req.Quality, p.quality),
-		Style:          coalesce(req.Style, p.style),
-		ResponseFormat: p.respFmt,
+	if len(req.ReferenceImages) > 0 {
+		for i, ref := range req.ReferenceImages {
+			if len(ref.Data) == 0 {
+				return nil, fmt.Errorf("openai: reference image %d is empty", i)
+			}
+		}
 	}
 
 	// Attempt 1: original prompt
-	result, err := p.callAPI(ctx, req.Prompt, apiReq)
+	result, err := p.callAPI(ctx, req.Prompt, req)
 	if err == nil {
 		return result, nil
 	}
@@ -151,8 +161,7 @@ func (p *OpenAIProvider) Generate(ctx context.Context, req *Request) (*Result, e
 	safePrompt := "Fictional storybook illustration from a literary narrative. " + req.Prompt
 	log.Printf("[SANITIZE] Tier 1 retry: %.300s", safePrompt)
 
-	apiReq.Prompt = safePrompt
-	result, err = p.callAPI(ctx, safePrompt, apiReq)
+	result, err = p.callAPI(ctx, safePrompt, req)
 	if err == nil {
 		log.Printf("[SANITIZE] Tier 1 retry succeeded")
 		return result, nil
@@ -167,8 +176,7 @@ func (p *OpenAIProvider) Generate(ctx context.Context, req *Request) (*Result, e
 		log.Printf("[SANITIZE] Tier 1 failed, using SafeFallback")
 		log.Printf("[SANITIZE] Fallback: %.300s", req.SafeFallback)
 
-		apiReq.Prompt = req.SafeFallback
-		result, err = p.callAPI(ctx, req.SafeFallback, apiReq)
+		result, err = p.callAPI(ctx, req.SafeFallback, req)
 		if err == nil {
 			log.Printf("[SANITIZE] Tier 2 retry succeeded")
 			return result, nil
@@ -183,14 +191,33 @@ func (p *OpenAIProvider) Generate(ctx context.Context, req *Request) (*Result, e
 	return nil, err
 }
 
-// callAPI performs a single API call with the given request and returns the result.
-func (p *OpenAIProvider) callAPI(ctx context.Context, prompt string, apiReq openAIRequest) (*Result, error) {
+// callAPI performs a single API call for the given prompt, choosing the edits
+// endpoint when the request carries reference images and the generations
+// endpoint otherwise.
+func (p *OpenAIProvider) callAPI(ctx context.Context, prompt string, req *Request) (*Result, error) {
+	if len(req.ReferenceImages) > 0 {
+		return p.callEditAPI(ctx, prompt, req)
+	}
+	return p.callGenerateAPI(ctx, prompt, req)
+}
+
+// callGenerateAPI hits the text-to-image generations endpoint.
+func (p *OpenAIProvider) callGenerateAPI(ctx context.Context, prompt string, req *Request) (*Result, error) {
+	apiReq := openAIRequest{
+		Model:          coalesce(req.Model, p.model),
+		Prompt:         prompt,
+		N:              capN(req.N),
+		Size:           coalesce(req.Size, p.size),
+		Quality:        coalesce(req.Quality, p.quality),
+		Style:          coalesce(req.Style, p.style),
+		ResponseFormat: p.respFmt,
+	}
 	body, err := json.Marshal(apiReq)
 	if err != nil {
 		return nil, fmt.Errorf("openai: marshal request: %w", err)
 	}
 
-	resp, err := p.doRequest(ctx, openAIBaseURL, body)
+	resp, err := p.doRequest(ctx, p.baseURL+"/images/generations", body, "application/json")
 	if err != nil {
 		return nil, fmt.Errorf("openai: %w", err)
 	}
@@ -200,21 +227,126 @@ func (p *OpenAIProvider) callAPI(ctx context.Context, prompt string, apiReq open
 	if err != nil {
 		return nil, fmt.Errorf("openai: read response: %w", err)
 	}
+	if err := p.checkStatus(resp, respBody); err != nil {
+		return nil, err
+	}
+	return p.decodeResponse(ctx, respBody, prompt, nil)
+}
 
-	if resp.StatusCode != http.StatusOK {
-		var apiErr openAIErrorResponse
-		if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Error.Message != "" {
-			switch apiErr.Error.Code {
-			case "content_policy_violation", "moderation_blocked":
-				return nil, fmt.Errorf("openai: %w: %s", ErrContentFiltered, apiErr.Error.Message)
-			case "rate_limit_exceeded":
-				return nil, fmt.Errorf("openai: %w: %s", ErrRateLimited, apiErr.Error.Message)
-			}
-			return nil, fmt.Errorf("openai: type=%s code=%s msg=%s",
-				apiErr.Error.Type, apiErr.Error.Code, apiErr.Error.Message)
+// callEditAPI hits the image edits endpoint, sending each reference image as an
+// image[] multipart part so the output is conditioned on it.
+func (p *OpenAIProvider) callEditAPI(ctx context.Context, prompt string, req *Request) (*Result, error) {
+	body, contentType, err := p.buildEditBody(prompt, req)
+	if err != nil {
+		return nil, fmt.Errorf("openai: build edit request: %w", err)
+	}
+
+	resp, err := p.doRequest(ctx, p.baseURL+"/images/edits", body, contentType)
+	if err != nil {
+		return nil, fmt.Errorf("openai: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, p.maxRespSize))
+	if err != nil {
+		return nil, fmt.Errorf("openai: read response: %w", err)
+	}
+	if err := p.checkStatus(resp, respBody); err != nil {
+		return nil, err
+	}
+	return p.decodeResponse(ctx, respBody, prompt, nil)
+}
+
+// checkStatus maps a non-200 response to the package error taxonomy. Both
+// image endpoints return the same error JSON shape.
+func (p *OpenAIProvider) checkStatus(resp *http.Response, respBody []byte) error {
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+	var apiErr openAIErrorResponse
+	if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Error.Message != "" {
+		switch apiErr.Error.Code {
+		case "content_policy_violation", "moderation_blocked":
+			return fmt.Errorf("openai: %w: %s", ErrContentFiltered, apiErr.Error.Message)
+		case "rate_limit_exceeded":
+			return fmt.Errorf("openai: %w: %s", ErrRateLimited, apiErr.Error.Message)
 		}
-		return nil, fmt.Errorf("openai: status=%d body=%s",
-			resp.StatusCode, truncate(string(respBody), 500))
+		return fmt.Errorf("openai: type=%s code=%s msg=%s",
+			apiErr.Error.Type, apiErr.Error.Code, apiErr.Error.Message)
+	}
+	return fmt.Errorf("openai: status=%d body=%s",
+		resp.StatusCode, truncate(string(respBody), 500))
+}
+
+// buildEditBody renders the multipart body for the edits endpoint. Every
+// reference image is attached as an image[] part carrying its own MIME type.
+func (p *OpenAIProvider) buildEditBody(prompt string, req *Request) ([]byte, string, error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+
+	for i, ref := range req.ReferenceImages {
+		name := ref.Name
+		if name == "" {
+			name = fmt.Sprintf("reference-%d%s", i, referenceExt(ref.MIMEType))
+		}
+		mimeType := ref.MIMEType
+		if mimeType == "" {
+			mimeType = "image/png"
+		}
+		h := textproto.MIMEHeader{}
+		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image[]"; filename=%q`, name))
+		h.Set("Content-Type", mimeType)
+		part, err := w.CreatePart(h)
+		if err != nil {
+			return nil, "", err
+		}
+		if _, err := part.Write(ref.Data); err != nil {
+			return nil, "", err
+		}
+	}
+
+	if err := w.WriteField("model", coalesce(req.Model, p.model)); err != nil {
+		return nil, "", err
+	}
+	if err := w.WriteField("prompt", prompt); err != nil {
+		return nil, "", err
+	}
+	if err := w.WriteField("n", strconv.Itoa(capN(req.N))); err != nil {
+		return nil, "", err
+	}
+	if size := coalesce(req.Size, p.size); size != "" {
+		if err := w.WriteField("size", size); err != nil {
+			return nil, "", err
+		}
+	}
+	if quality := coalesce(req.Quality, p.quality); quality != "" {
+		if err := w.WriteField("quality", quality); err != nil {
+			return nil, "", err
+		}
+	}
+	if err := w.Close(); err != nil {
+		return nil, "", err
+	}
+	return buf.Bytes(), w.FormDataContentType(), nil
+}
+
+// referenceExt maps a MIME type to a filename extension for multipart parts.
+func referenceExt(mimeType string) string {
+	switch mimeType {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/webp":
+		return ".webp"
+	default:
+		return ".png"
+	}
+}
+
+// decodeResponse parses the shared response shape of the generations and edits
+// endpoints and downloads or decodes the first image.
+func (p *OpenAIProvider) decodeResponse(ctx context.Context, respBody []byte, prompt string, prevErr error) (*Result, error) {
+	if prevErr != nil {
+		return nil, prevErr
 	}
 
 	var result openAIResponse
@@ -231,6 +363,7 @@ func (p *OpenAIProvider) callAPI(ctx context.Context, prompt string, apiReq open
 
 	img := result.Data[0]
 	var imgData []byte
+	var err error
 
 	switch {
 	case img.B64JSON != "":
@@ -256,7 +389,7 @@ func (p *OpenAIProvider) callAPI(ctx context.Context, prompt string, apiReq open
 	}, nil
 }
 
-func (p *OpenAIProvider) doRequest(ctx context.Context, url string, payload []byte) (*http.Response, error) {
+func (p *OpenAIProvider) doRequest(ctx context.Context, url string, payload []byte, contentType string) (*http.Response, error) {
 	var resp *http.Response
 	var lastErr error
 
@@ -267,7 +400,7 @@ func (p *OpenAIProvider) doRequest(ctx context.Context, url string, payload []by
 			continue
 		}
 
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", contentType)
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
 		resp, err = p.client.Do(req)

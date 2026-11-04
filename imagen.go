@@ -21,6 +21,15 @@ const (
 	ProviderGrok      ProviderID = "grok"
 )
 
+// ReferenceImage is one input image used to condition generation (e.g. a
+// character reference photo). Providers that do not support image conditioning
+// ignore them and fall back to text-only generation.
+type ReferenceImage struct {
+	Data     []byte
+	MIMEType string // e.g. "image/jpeg"; empty defaults to image/png
+	Name     string // filename hint; empty gets a generated one
+}
+
 // Request defines parameters for generating an image.
 type Request struct {
 	Prompt       string
@@ -30,6 +39,14 @@ type Request struct {
 	Quality      string
 	N            int
 	Style        string
+
+	// ReferenceImages switches OpenAI generation to the edits endpoint, which
+	// conditions the output on the given input images (character consistency,
+	// style transfer). Empty means plain text-to-image.
+	ReferenceImages []ReferenceImage
+	// ImageStrength is a 0..1 hint for providers that blend a reference image
+	// with the prompt (e.g. Stability image-to-image). OpenAI ignores it.
+	ImageStrength float64
 
 	Extras map[string]any
 }

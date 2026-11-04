@@ -166,6 +166,7 @@ provider := imagen.NewOpenAIProvider("sk-...")
 Supports `gpt-image-2`, `dall-e-3`, and `dall-e-2`. Configurable via options:
 
 - `WithOpenAIModel` — model name
+- `WithOpenAIBaseURL` — API base URL (default `https://api.openai.com/v1`)
 - `WithOpenAISize` — output dimensions
 - `WithOpenAIQuality` — `standard` or `hd`
 - `WithOpenAIStyle` — `vivid` or `natural`
@@ -187,6 +188,28 @@ result, err := client.GenerateAndStore(ctx, &imagen.Request{
 ```
 
 This prevents hard failures from over-aggressive moderation while giving the caller full control over the fallback content.
+
+### Reference images (image conditioning)
+
+The OpenAI provider supports reference-image conditioning. When a request carries
+`ReferenceImages`, the provider switches from the text-to-image
+`/images/generations` endpoint to the multipart `/images/edits` endpoint and
+attaches every reference as an `image[]` part, so the output is conditioned on
+the input images (character consistency, style transfer):
+
+```go
+result, err := client.GenerateAndStore(ctx, &imagen.Request{
+    Prompt: "the same character reading a book, watercolor storybook style",
+    ReferenceImages: []imagen.ReferenceImage{
+        {Data: selfieJPEG, MIMEType: "image/jpeg", Name: "selfie.jpg"},
+    },
+})
+```
+
+- Without references the request is unchanged text-to-image.
+- The moderation fallback tiers apply to the edits path as well.
+- Providers without an edits endpoint (Stability, Grok) log and ignore
+  references, falling back to text-only generation.
 
 ### Stability AI
 
